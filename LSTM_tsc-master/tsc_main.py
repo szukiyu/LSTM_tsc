@@ -66,13 +66,15 @@ hidden_size = 13            #Number of entries of the cell state of the LSTM
 max_iterations = 100         #Maximum iterations to train
 batch_size = 15             #batch size
 outputclass = 2             #2016/06/01 ysuzuki added
-unit = 100                    #2016/06/01 ysuzuki added
+unit = 10                    #2016/06/01 ysuzuki added
 ntest = 100                 #num of calculate cost and accuracy
 
-checkpoint_prefix = "models/saved_checkpoint"
+#for saving graph
+checkpoint_prefix = os.path.join("models/", "saved_checkpoint")
 checkpoint_state_name = "checkpoint_state"
 input_graph_name = "input_graph.pb"
 output_graph_name = "output_graph.pb"
+
 
 """Place holders"""
 input_data = tf.placeholder(tf.float32, [None, num_steps], name = 'input_data')
@@ -191,17 +193,16 @@ perf_collect_local = np.zeros((3,int(np.floor(unit))))
 """Session time"""
 with tf.Session() as session:
 
-  #writer = tf.train.SummaryWriter("/home/suzuki/LSTM_tsc-master/log", session.graph_def)
+  writer = tf.train.SummaryWriter("/home/suzuki/LSTM_tsc-master/log", session.graph_def)
   
   tf.initialize_variables(tf.all_variables(), name='init_all_vars_op2').run()
   #tf.initialize_all_variables().run()
-
 
   step = 0
   step_local = 0
 
   for i in range(max_iterations):
-    
+
     # Calculate some sizes
     N_norm= X_train_norm.shape[0]
     
@@ -254,28 +255,35 @@ with tf.Session() as session:
         #writer.add_summary(summary_str, i)
         #writer.flush()
 
-
-  saver = tf.train.Saver()
-  saver.save(session, checkpoint_prefix, global_step=0,
-             latest_filename=checkpoint_state_name)
-
-  tf.train.write_graph(session.graph_def, 'models/', input_graph_name, as_text=False)
+    if i == (max_iterations -1):
+        saver = tf.train.Saver()
+        saver.save(session, checkpoint_prefix, global_step=0, latest_filename=checkpoint_state_name)
+        tf.train.write_graph(session.graph.as_graph_def(), "models/", input_graph_name)    
+        
+  #tf.train.write_graph(session.graph_def, 'models/', 'graph.pb', as_text=False)
   #tf.train.write_graph(session.graph_def, 'models/', 'graph2.pb', as_text=True)
-
-  input_graph_path = os.path.join('models/', input_graph_name)
+  
+  input_graph_path = os.path.join("models/", input_graph_name)
   input_saver_def_path = ""
   input_binary = False
-  input_checkpoint_path = checkpoint_prefix + "-0"
-  output_node_names = "output_node"
+  input_checkpoint_path = os.path.join("models/", 'saved_checkpoint') + "-0"
+
+  # Note that we this normally should be only "output_node"!!!
+  output_node_names = "Softmax/costvalue,Softmax/accu"
   restore_op_name = "save/restore_all"
   filename_tensor_name = "save/Const:0"
-  output_graph_path = os.path.join('models/', output_graph_name)
+  output_graph_path = os.path.join("models/", output_graph_name)
   clear_devices = False
 
+  freeze_graph.freeze_graph(input_graph_path, input_saver_def_path,
+                          input_binary, input_checkpoint_path,
+                          output_node_names, restore_op_name,
+                          filename_tensor_name, output_graph_path,
+                          clear_devices, "")
 
-  freeze_graph.freeze_graph(input_graph_path, input_saver_def_path,input_binary, input_checkpoint_path,output_node_names, restore_op_name,filename_tensor_name, output_graph_path,clear_devices, "")
 
-
+  tf.train.write_graph(session.graph.as_graph_def(), "models/", "test.pb", as_text=True)
+    
 """Additional plots"""
 print('The accuracy on the test data is %.3f, before training was %.3f' %(acc_test,acc_test_before))
 
