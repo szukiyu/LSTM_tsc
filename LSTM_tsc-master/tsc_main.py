@@ -43,6 +43,18 @@ def sample_abn_batch(X_train,y_train,batch_size,num_steps):
     y_batch = y_train[ind_N]
     return X_batch,y_batch
     
+def sample_batch_test(X_train,y_train,batch_size,num_steps):
+    """ Function to sample a batch for training"""
+    N,data_len = X_train.shape
+    #ran  = np.random.choice(N-batch_size,1)
+    ran  = 0;
+    ind_N = np.arange(ran,ran+batch_size)
+    ind_start = 0 # ysuzuki added 2016/06/03
+    #form batch
+    X_batch = X_train[ind_N,ind_start:ind_start+num_steps]
+    y_batch = y_train[ind_N]
+    return X_batch,y_batch
+
 def check_test(X_test,y_test,batch_size,num_steps):
     """ Function to check the test_accuracy on the entire test set
     This is a workaround. I haven't figured out yet how to make the graph
@@ -115,8 +127,6 @@ with tf.variable_scope("model", initializer=initializer):
 #modelling. We only output to Softmax at last time step
 with tf.name_scope("Softmax") as scope:
   with tf.variable_scope("Softmax_params"): 
-    # Both datasets have four output classes. Improve the code by changing the 4
-    # into a hyperparameter
     softmax_w = tf.get_variable("softmax_w", [hidden_size, outputclass]) # suzuki 2016/06/01                 
     softmax_b = tf.get_variable("softmax_b", [outputclass]) # suzuki 2016/06/01                              
 
@@ -202,6 +212,7 @@ with tf.Session() as session:
   step_local = 0
 
   for i in range(max_iterations):
+    saver = tf.train.Saver()
 
     # Calculate some sizes
     N_norm= X_train_norm.shape[0]
@@ -219,7 +230,7 @@ with tf.Session() as session:
     #Next line does the actual training
     session.run(train_op,feed_dict = {input_data: X_batch,targets: y_batch,initial_state: state,keep_prob:0.5})
 
-    print("iteration #",i+1,"/",max_iterations)
+    #print("iteration #",i+1,"/",max_iterations)
     if i==0:
         # Uset this line to check before-and-after test accuracy
         acc_test_before = check_test(X_test,y_test,batch_size,num_steps)
@@ -237,11 +248,15 @@ with tf.Session() as session:
         cost_out_sum = 0.0
         acc_val_sum = 0.0
         for j in range(ntest):
-            X_batch, y_batch = sample_batch(X_val,y_val,batch_size,num_steps)
-            result = session.run([cost,merged,accuracy],feed_dict = {input_data: X_batch, targets: y_batch, initial_state:state,keep_prob:1})
+            #X_batch, y_batch = sample_batch(X_val,y_val,batch_size,num_steps)
+            X_batch, y_batch = sample_batch_test(X_val,y_val,batch_size,num_steps)
+            #print(X_batch)
+            result = session.run([cost,merged,accuracy,loss,softmax_w],feed_dict = {input_data: X_batch, targets: y_batch, initial_state:state,keep_prob:1})
             cost_out_sum += result[0]
             acc_val_sum += result[2]
-        
+            lost_tmp = result[3]
+            w_tmp = result[4]
+
         perf_collect[1,step] = cost_out_sum/float(ntest)
         perf_collect[2,step] = acc_val_sum/float(ntest)
 
@@ -255,31 +270,31 @@ with tf.Session() as session:
         #writer.add_summary(summary_str, i)
         #writer.flush()
 
-    if i == (max_iterations -1):
-        saver = tf.train.Saver()
+    if i == (max_iterations - unit):
         saver.save(session, checkpoint_prefix, global_step=0, latest_filename=checkpoint_state_name)
         tf.train.write_graph(session.graph.as_graph_def(), "models/", input_graph_name)    
-        
-  #tf.train.write_graph(session.graph_def, 'models/', 'graph.pb', as_text=False)
-  #tf.train.write_graph(session.graph_def, 'models/', 'graph2.pb', as_text=True)
-  
+        tf.train.write_graph(session.graph.as_graph_def(), "models/", "test2.pb", as_text=True)    
+        print("i = ",i)
+        print("w = ",result[4])
+        print("loss = ",result[3])
+        print("cost = ",result[0])
+        print("accuracy = ",result[2])
+
+
   input_graph_path = os.path.join("models/", input_graph_name)
   input_saver_def_path = ""
   input_binary = False
   input_checkpoint_path = os.path.join("models/", 'saved_checkpoint') + "-0"
 
   # Note that we this normally should be only "output_node"!!!
-  output_node_names = "Softmax/costvalue,Softmax/accu"
+  output_node_names = "Softmax/Sparse_softmax,Softmax/costvalue,Softmax/accu,Softmax_params/softmax_w"
+  #output_node_names = "Softmax/Sparse_softmax/Sparse_softmax"
   restore_op_name = "save/restore_all"
   filename_tensor_name = "save/Const:0"
   output_graph_path = os.path.join("models/", output_graph_name)
   clear_devices = False
 
-  freeze_graph.freeze_graph(input_graph_path, input_saver_def_path,
-                          input_binary, input_checkpoint_path,
-                          output_node_names, restore_op_name,
-                          filename_tensor_name, output_graph_path,
-                          clear_devices, "")
+  freeze_graph.freeze_graph(input_graph_path, input_saver_def_path,input_binary, input_checkpoint_path,output_node_names, restore_op_name,filename_tensor_name, output_graph_path,clear_devices, "")
 
 
   tf.train.write_graph(session.graph.as_graph_def(), "models/", "test.pb", as_text=True)
